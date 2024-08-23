@@ -1,0 +1,25 @@
+{
+  "name": "request-rate-limiter",
+  "version": "1.0.0",
+  "description": "API Call Rate Limiter is a lightweight library designed to help developers manage and enforce API rate limits effortlessly",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/geoapify/request-rate-limiter.git"
+  },
+  "author": "Oleg Hovsepyan",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/geoapify/request-rate-limiter/issues"
+  },
+  "homepage": "https://github.com/geoapify/request-rate-limiter#readme",
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "jest": {
+    "testMatch": ["**/?(*.)+(test).[jt]s?(x)"]
+  }
+}
