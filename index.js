@@ -1,7 +1,9 @@
 async function rateLimitedRequests(requests, maxRequests, interval, options) {
+    validateArguments(maxRequests, interval, requests);
     batchState = {
         batchItemsToFire: [],
-        batchEndIndex: 0
+        batchEndIndex: 0,
+        totalRequests: requests.length
     }
     const result = new Array(requests.length);
     const promises = [];
@@ -41,8 +43,12 @@ function onBatchCompleteFired(batchState, result, startIndex, endIndex, batchSiz
     }
 }
 
-function onProgressFired(result, startIndex, endIndex, onProgress) {
-    //     TODO: implement this part
+function onProgressFired(batchState, result, endIndex, onProgress) {
+    const data = {
+        totalRequests: batchState.totalRequests,
+        completedRequests: endIndex
+    }
+    onProgress(data);
 }
 
 function onBatchFinish(batchState, batch, options, startIndex, endIndex) {
@@ -51,9 +57,15 @@ function onBatchFinish(batchState, batch, options, startIndex, endIndex) {
             onBatchCompleteFired(batchState, result, startIndex, endIndex, options.batchSize, options.onBatchComplete);
         }
         if (options && options.onProgress) {
-            onProgressFired(result, startIndex, endIndex, options.onProgress);
+            onProgressFired(batchState, result, endIndex, options.onProgress);
         }
     })
+}
+
+function validateArguments(maxRequests, interval, requests) {
+    if (maxRequests < 1) throw new Error('"maxRequests" must be at least 1');
+    if (interval <= 0) throw new Error('"interval" must be positive number');
+    if (!requests || requests.length === 0) throw new Error('"requests" must be an array of functions to execute');
 }
 
 module.exports = rateLimitedRequests

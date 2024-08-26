@@ -8,26 +8,20 @@ const requestURL = `https://httpbin.org/get`;
 
 test('execute 50 requests', async () => {
     const requests = generateRequests(50);
+    const options = createOptions(null, null, null);
 
-    const options = {
-        batchSize: null,
-        onProgress: null,
-        onBatchComplete: null
-    }
     let result = await rateLimitedRequests(requests, 25, 1000, options);
+
     expect(result.length).toBe(50);
     expectResponseToContainData(result, 0, 49);
 });
 
 test('execute 1000 requests', async () => {
     const requests = generateRequests(1000);
+    const options = createOptions(null, null, null);
 
-    const options = {
-        batchSize: null,
-        onProgress: null,
-        onBatchComplete: null
-    }
     let result = await rateLimitedRequests(requests, 100, 1000, options);
+
     expect(result.length).toBe(1000);
     expectResponseToContainData(result, 0, 999);
 });
@@ -35,15 +29,10 @@ test('execute 1000 requests', async () => {
 test('execute 50 requests with batch', async () => {
     const requests = generateRequests(50);
     const batchItems = [];
-    const options = {
-        batchSize: 10,
-        onProgress: () => {
-        },
-        onBatchComplete: (batch) => {
-            batchItems.push(batch)
-        }
-    }
+    const options = createOptions(10, () => {}, (batch) => batchItems.push(batch));
+
     let result = await rateLimitedRequests(requests, 25, 1000, options);
+
     expect(result.length).toBe(50);
     expect(batchItems.length).toBe(5);
     expectBatchResponseToContainData(batchItems, 0,0,9);
@@ -56,14 +45,9 @@ test('execute 50 requests with batch', async () => {
 test('execute 50 requests with batch (batchSize bigger than total requests)', async () => {
     const requests = generateRequests(50);
     const batchItems = [];
-    const options = {
-        batchSize: 60,
-        onProgress: () => {
-        },
-        onBatchComplete: (batch) => {
-            batchItems.push(batch)
-        }
-    }
+
+    const options = createOptions(60, () => {}, (batch) => batchItems.push(batch));
+
     let result = await rateLimitedRequests(requests, 25, 1000, options);
     expect(result.length).toBe(50);
     expect(batchItems.length).toBe(0);
@@ -72,18 +56,28 @@ test('execute 50 requests with batch (batchSize bigger than total requests)', as
 test('execute 50 requests with batch (batchSize equals to total requests)', async () => {
     const requests = generateRequests(50);
     const batchItems = [];
-    const options = {
-        batchSize: 50,
-        onProgress: () => {
-        },
-        onBatchComplete: (batch) => {
-            batchItems.push(batch)
-        }
-    }
+
+    const options = createOptions(50, () => {}, (batch) => batchItems.push(batch));
+
     let result = await rateLimitedRequests(requests, 25, 1000, options);
     expect(result.length).toBe(50);
     expect(batchItems.length).toBe(1);
     expectBatchResponseToContainData(batchItems, 0,0,49);
+});
+
+test('execute 50 requests with batch and expect onProgress callback', async () => {
+    const requests = generateRequests(50);
+    const progressItems = [];
+
+    const options = createOptions(50, (progress) => progressItems.push(progress), null);
+
+    let result = await rateLimitedRequests(requests, 25, 1000, options);
+    expect(result.length).toBe(50);
+    expect(progressItems.length).toBe(2);
+    expect(progressItems[0].totalRequests).toBe(50);
+    expect(progressItems[0].completedRequests).toBe(25);
+    expect(progressItems[1].totalRequests).toBe(50);
+    expect(progressItems[1].completedRequests).toBe(50);
 });
 
 function expectResponseToContainData(result, startIndex, endIndex) {
@@ -121,4 +115,36 @@ async function makeRequest(requestId, attempt = 1) {
             return {error: error.toString()};
         }
     }
+}
+
+test('execute 5 request, options not passed', async () => {
+    const requests = generateRequests(5);
+
+    let result = await rateLimitedRequests(requests, 25, 1000);
+
+    expect(result.length).toBe(5);
+});
+
+test('execute 5 request, maxRequests = 0', async () => {
+    const requests = generateRequests(5);
+
+    await expect(rateLimitedRequests(requests, 0, 1000)).rejects.toThrow('"maxRequests" must be at least 1');
+});
+
+test('execute 5 request, interval = 0', async () => {
+    const requests = generateRequests(5);
+
+    await expect(rateLimitedRequests(requests, 1, 0)).rejects.toThrow('"interval" must be positive number');
+});
+
+test('execute 5 request, requests is empty array', async () => {
+    await expect(rateLimitedRequests([], 1, 1000)).rejects.toThrow('"requests" must be an array of functions to execute');
+});
+
+function createOptions(batchSize, onProgress, onBatchComplete) {
+    return {
+        batchSize: batchSize,
+        onProgress: onProgress,
+        onBatchComplete: onBatchComplete
+    };
 }
