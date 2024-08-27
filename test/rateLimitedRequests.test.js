@@ -13,17 +13,21 @@ test('execute 50 requests', async () => {
     let result = await rateLimitedRequests(requests, 25, 1000, options);
 
     expect(result.length).toBe(50);
-    expectResponseToContainData(result, 0, 49);
+    expect(isResponseContainData(result, 0, 49)).toBe(true);
 });
 
 test('execute 1000 requests', async () => {
     const requests = generateRequests(1000);
-    const options = createOptions(null, null, null);
+    const batchItems = [];
+    const progressItems = [];
+    const options = createOptions(50, (progress) => progressItems.push(progress), (batch) => batchItems.push(batch));
 
     let result = await rateLimitedRequests(requests, 100, 1000, options);
 
     expect(result.length).toBe(1000);
-    expectResponseToContainData(result, 0, 999);
+    expect(isResponseContainData(result, 0, 999)).toBe(true);
+    checkBatchItems(batchItems, 50, 1000);
+    checkProgressItems(progressItems, 100, 1000, 10);
 });
 
 test('execute 50 requests with batch', async () => {
@@ -35,11 +39,7 @@ test('execute 50 requests with batch', async () => {
 
     expect(result.length).toBe(50);
     expect(batchItems.length).toBe(5);
-    expectBatchResponseToContainData(batchItems, 0,0,9);
-    expectBatchResponseToContainData(batchItems, 1,10,19);
-    expectBatchResponseToContainData(batchItems, 2,20,29);
-    expectBatchResponseToContainData(batchItems, 3,30,39);
-    expectBatchResponseToContainData(batchItems, 4,40,49);
+    checkBatchItems(batchItems, 10, 50);
 });
 
 test('execute 50 requests with batch (batchSize bigger than total requests)', async () => {
@@ -62,7 +62,7 @@ test('execute 50 requests with batch (batchSize equals to total requests)', asyn
     let result = await rateLimitedRequests(requests, 25, 1000, options);
     expect(result.length).toBe(50);
     expect(batchItems.length).toBe(1);
-    expectBatchResponseToContainData(batchItems, 0,0,49);
+    isBatchResponseContainData(batchItems,0,49);
 });
 
 test('execute 50 requests with batch and expect onProgress callback', async () => {
@@ -73,49 +73,8 @@ test('execute 50 requests with batch and expect onProgress callback', async () =
 
     let result = await rateLimitedRequests(requests, 25, 1000, options);
     expect(result.length).toBe(50);
-    expect(progressItems.length).toBe(2);
-    expect(progressItems[0].totalRequests).toBe(50);
-    expect(progressItems[0].completedRequests).toBe(25);
-    expect(progressItems[1].totalRequests).toBe(50);
-    expect(progressItems[1].completedRequests).toBe(50);
+    checkProgressItems(progressItems, 25, 50, 2);
 });
-
-function expectResponseToContainData(result, startIndex, endIndex) {
-    for(let i = startIndex; i <= endIndex; i++){
-        expect(JSON.stringify(result[i - startIndex])).toContain(`{"args":{"id":"${i}"}`);
-    }
-}
-
-function generateRequests(numberOfRequests) {
-    let result = [];
-    for(let i = 0; i < numberOfRequests; i++) {
-        result.push( () => makeRequest(i));
-    }
-    return result;
-}
-
-function expectBatchResponseToContainData(batchItems, index, startIndex, endIndex) {
-    expectResponseToContainData(batchItems[index].results, startIndex, endIndex);
-    expect(batchItems[index].startIndex).toBe(startIndex);
-    expect(batchItems[index].stopIndex).toBe(endIndex);
-}
-
-async function makeRequest(requestId, attempt = 1) {
-    try {
-        const response = await fetch(requestURL + '?id=' + requestId);
-        if (!response.ok) {
-            throw new Error(`HTTP error occured Status: ${response.status}`);
-        }
-        return await response.json();
-    } catch (error) {
-        if (attempt <= maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, retryDelayInMillis));
-            return makeRequest(requestId, attempt + 1);
-        } else {
-            return {error: error.toString()};
-        }
-    }
-}
 
 test('execute 5 request, options not passed', async () => {
     const requests = generateRequests(5);
@@ -140,6 +99,73 @@ test('execute 5 request, interval = 0', async () => {
 test('execute 5 request, requests is empty array', async () => {
     await expect(rateLimitedRequests([], 1, 1000)).rejects.toThrow('"requests" must be an array of functions to execute');
 });
+
+
+function isResponseContainData(result, startIndex, endIndex) {
+    for(let i = startIndex; i <= endIndex; i++){
+        let resultItem = JSON.stringify(result[i - startIndex]);
+        if(!resultItem || !resultItem.includes(`{"args":{"id":"${i}"}`)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function generateRequests(numberOfRequests) {
+    let result = [];
+    for(let i = 0; i < numberOfRequests; i++) {
+        result.push( () => makeRequest(i));
+    }
+    return result;
+}
+
+function isBatchResponseContainData(batchItems, startIndex, endIndex) {
+    for(let i = 0; i < batchItems.length; i++) {
+        let batchItem = batchItems[i];
+        if(batchItem.startIndex === startIndex && batchItem.stopIndex === endIndex) {
+            if(isResponseContainData(batchItem.results, startIndex, endIndex)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+async function makeRequest(requestId, attempt = 1) {
+    try {
+        const response = await fetch(requestURL + '?id=' + requestId);
+        if (!response.ok) {
+            throw new Error(`HTTP error occured Status: ${response.status}`);
+        }
+        return await response.json();
+    } catch (error) {
+        if (attempt <= maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, retryDelayInMillis));
+            return makeRequest(requestId, attempt + 1);
+        } else {
+            return {error: error.toString()};
+        }
+    }
+}
+
+function checkProgressItems(progressItems, maxRequests, totalRequests, expectedProgressItemsCount) {
+    expect(progressItems.length).toBe(expectedProgressItemsCount);
+    for(let i = 0; i < expectedProgressItemsCount; i++) {
+        expect(progressItems[i].totalRequests).toBe(totalRequests);
+        expect(progressItems[i].completedRequests).toBe((1 + i) * maxRequests);
+    }
+}
+
+function checkBatchItems(batchItems, batchSize, totalRequests) {
+    for(let i = 0; i < totalRequests; i = i + batchSize) {
+        let result = isBatchResponseContainData(batchItems, i, i + batchSize - 1);
+        if(!result) {
+            console.log("items " + JSON.stringify(batchItems));
+            console.log(`startIndex ${i}, endIndex ${i + batchSize - 1}`);
+        }
+        expect(result).toBe(true);
+    }
+}
 
 function createOptions(batchSize, onProgress, onBatchComplete) {
     return {

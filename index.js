@@ -1,9 +1,9 @@
 async function rateLimitedRequests(requests, maxRequests, interval, options) {
     validateArguments(maxRequests, interval, requests);
     batchState = {
-        batchItemsToFire: [],
-        batchEndIndex: 0,
-        totalRequests: requests.length
+        batchItemsToFire: new Array(requests.length),
+        totalRequests: requests.length,
+        completedRequests: 0
     }
     const result = new Array(requests.length);
     const promises = [];
@@ -28,36 +28,54 @@ async function rateLimitedRequests(requests, maxRequests, interval, options) {
     return result;
 }
 
-function onBatchCompleteFired(batchState, result, startIndex, endIndex, batchSize, onBatchComplete) {
-    batchState.batchItemsToFire.push(...result);
+function onBatchCompleteFired(batchState, batchItems, startIndex, endIndex, batchSize, onBatchComplete) {
+    for (let i = startIndex; i < endIndex; i++) {
+        batchState.batchItemsToFire[i] = batchItems[i - startIndex];
+    }
 
-    while (batchState.batchItemsToFire.length >= batchSize) {
-        const batch = batchState.batchItemsToFire.splice(0, batchSize);
-        const result = {
-            startIndex: batchState.batchEndIndex,
-            stopIndex: batchState.batchEndIndex + batchSize - 1,
-            results: batch
+    for (let i = 0; i < batchState.batchItemsToFire.length; i = i + batchSize) {
+        let batchEndIndex = i + batchSize;
+        let allItemsArePopulated = ifAllItemsArePopulated(batchState, i, batchEndIndex);
+        if(allItemsArePopulated) {
+            const batch = batchState.batchItemsToFire.slice(i, batchEndIndex);
+            const result = {
+                startIndex: i,
+                stopIndex: batchEndIndex - 1,
+                results: batch
+            }
+            for (let j = 0; j < batchEndIndex; j++) {
+                batchState.batchItemsToFire[j] = undefined;
+            }
+            onBatchComplete(result);
         }
-        batchState.batchEndIndex += batchSize;
-        onBatchComplete(result);
     }
 }
 
-function onProgressFired(batchState, result, endIndex, onProgress) {
+function ifAllItemsArePopulated(batchState, startIndex, endIndex) {
+    for(let i = startIndex; i < endIndex; i++) {
+        if(batchState.batchItemsToFire[i] === undefined) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function onProgressFired(batchState, startIndex, endIndex, onProgress) {
+    batchState.completedRequests += endIndex - startIndex;
     const data = {
         totalRequests: batchState.totalRequests,
-        completedRequests: endIndex
+        completedRequests: batchState.completedRequests
     }
     onProgress(data);
 }
 
 function onBatchFinish(batchState, batch, options, startIndex, endIndex) {
-    Promise.all(batch).then(result => {
+    Promise.all(batch).then(batchItems => {
         if (options && options.batchSize && options.onBatchComplete) {
-            onBatchCompleteFired(batchState, result, startIndex, endIndex, options.batchSize, options.onBatchComplete);
+            onBatchCompleteFired(batchState, batchItems, startIndex, endIndex, options.batchSize, options.onBatchComplete);
         }
         if (options && options.onProgress) {
-            onProgressFired(batchState, result, endIndex, options.onProgress);
+            onProgressFired(batchState, startIndex, endIndex, options.onProgress);
         }
     })
 }
