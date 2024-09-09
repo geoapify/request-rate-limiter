@@ -9,9 +9,9 @@ async function rateLimitedRequests(requests, maxRequests, interval, options) {
     const promises = [];
 
     for (let startIndex = 0; startIndex < requests.length; startIndex += maxRequests) {
-        const endIndex = startIndex + maxRequests;
+        const endIndex = Math.min(startIndex + maxRequests, requests.length);
         const batch = requests.slice(startIndex, endIndex).map((execute, index) =>
-            execute().then(res => {
+            Promise.resolve(execute()).then(res => {
                 result[startIndex + index] = res;
                 return res;
             })
@@ -40,7 +40,7 @@ function onBatchCompleteFired(batchState, batchItems, startIndex, endIndex, batc
             const batch = batchState.batchItemsToFire.slice(i, batchEndIndex);
             const result = {
                 startIndex: i,
-                stopIndex: batchEndIndex - 1,
+                stopIndex: Math.min(batchEndIndex - 1, batchState.batchItemsToFire.length - 1),
                 results: batch
             }
             for (let j = 0; j < batchEndIndex; j++) {
@@ -53,7 +53,7 @@ function onBatchCompleteFired(batchState, batchItems, startIndex, endIndex, batc
 
 function ifAllItemsArePopulated(batchState, startIndex, endIndex) {
     for(let i = startIndex; i < endIndex; i++) {
-        if(batchState.batchItemsToFire[i] === undefined) {
+        if(i < batchState.batchItemsToFire.length && batchState.batchItemsToFire[i] === undefined) {
             return false;
         }
     }
@@ -86,4 +86,4 @@ function validateArguments(maxRequests, interval, requests) {
     if (!requests || requests.length === 0) throw new Error('"requests" must be an array of functions to execute');
 }
 
-module.exports = rateLimitedRequests
+module.exports = { rateLimitedRequests };

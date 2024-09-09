@@ -1,4 +1,5 @@
-const rateLimitedRequests = require('../index');
+const { rateLimitedRequests } = require('../src/request-rate-limiter');
+const mockFetch = require('./mock-fetch');
 
 jest.setTimeout(60000);
 
@@ -133,7 +134,7 @@ function isBatchResponseContainData(batchItems, startIndex, endIndex) {
 
 async function makeRequest(requestId, attempt = 1) {
     try {
-        const response = await fetch(requestURL + '?id=' + requestId);
+        const response = await mockFetch(requestURL + '?id=' + requestId);
         if (!response.ok) {
             throw new Error(`HTTP error occured Status: ${response.status}`);
         }

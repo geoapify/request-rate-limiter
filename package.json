@@ -1,25 +1,51 @@
 {
   "name": "request-rate-limiter",
   "version": "1.0.0",
-  "description": "API Call Rate Limiter is a lightweight library designed to help developers manage and enforce API rate limits effortlessly",
-  "main": "index.js",
+  "description": "Throttle and limit API requests with ease using this request-limiter. Perfect for preventing 429 errors, managing request bursts, and controlling traffic.",
+  "main": "dist/request-rate-limiter.js",
   "scripts": {
-    "test": "jest"
+    "test": "jest",
+    "build": "webpack"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/geoapify/request-rate-limiter.git"
   },
-  "author": "Oleg Hovsepyan",
+  "author": {
+    "name": "Geoapify GmbH",
+    "email": "info@geoapify.com",
+    "url": "https://geoapify.com"
+  },
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/geoapify/request-rate-limiter/issues"
   },
   "homepage": "https://github.com/geoapify/request-rate-limiter#readme",
   "devDependencies": {
-    "jest": "^29.7.0"
+    "jest": "^29.7.0",
+    "webpack": "^5.94.0",
+    "webpack-cli": "^5.1.4"
   },
   "jest": {
-    "testMatch": ["**/?(*.)+(test).[jt]s?(x)"]
-  }
+    "testMatch": [
+      "**/?(*.)+(test).[jt]s?(x)"
+    ]
+  },
+  "keywords": [
+    "rate-limiter",
+    "request-limiter",
+    "rate-limit",
+    "throttle",
+    "api-throttle",
+    "request-control",
+    "request-queue",
+    "concurrent-requests",
+    "timeout-management",
+    "api-traffic",
+    "request-throttling",
+    "flood-protection",
+    "429-error",
+    "429-protection",
+    "too-many-requests"
+  ]
 }
