@@ -1,5 +1,5 @@
 {
-  "name": "request-rate-limiter",
+  "name": "@geoapify/request-rate-limiter",
   "version": "1.0.0",
   "description": "Throttle and limit API requests with ease using this request-limiter. Perfect for preventing 429 errors, managing request bursts, and controlling traffic.",
   "main": "dist/request-rate-limiter.js",
