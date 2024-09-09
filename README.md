@@ -1,6 +1,6 @@
 # request-rate-limiter
 
-*A lightweight, zero-dependency Node.js library for managing and controlling API request rates with features like progress signaling and batch result retrieval*
+**A lightweight, zero-dependency Node.js library for managing and controlling API request rates with features like progress signaling and batch result retrieval**
 
 The library designed to manage API request rates, prevent 429 "Too Many Requests" errors, and ensure compliance with rate limits for services like [Geocoding APIs](https://www.geoapify.com/geocoding-api/). It helps:
 
@@ -77,7 +77,7 @@ Here's an example of how to use the @geoapify/request-rate-limiter library to co
 ### Example 1: Basic Usage with Logging
 This example demonstrates a simple scenario where six functions are executed with rate limiting, batching, and progress logging.
 
-```
+```javascript
 const RequestRateLimiter = require('@geoapify/request-rate-limiter');
 
 const requests = [
