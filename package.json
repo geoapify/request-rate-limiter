@@ -1,7 +1,7 @@
 {
   "name": "@geoapify/request-rate-limiter",
-  "version": "1.0.0",
-  "description": "Throttle and limit API requests with ease using this request-limiter. Perfect for preventing 429 errors, managing request bursts, and controlling traffic.",
+  "version": "1.0.1",
+  "description": "Easily throttle API requests to prevent 429 errors and manage traffic bursts",
   "main": "dist/request-rate-limiter.js",
   "scripts": {
     "test": "jest",
