@@ -159,7 +159,7 @@ const options = {
     console.log(`Progress: ${progress.completedRequests}/${progress.totalRequests} completed`);
   },
   onBatchComplete: (batch) => {
-    console.log(`Batch of ${batch.length} requests completed.`);
+    console.log(`Batch of ${batch.results.length} requests completed.`);
     saveBatchResults(batch);
   }
 };
