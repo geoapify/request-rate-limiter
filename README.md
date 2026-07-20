@@ -1,179 +1,309 @@
-# request-rate-limiter
+# @geoapify/request-rate-limiter
 
-**A lightweight, zero-dependency Node.js library for managing and controlling API request rates with features like progress signaling and batch result retrieval**
+A lightweight, zero-dependency JavaScript/TypeScript library for running request functions with rate limits, concurrency limits, progress callbacks, and ordered batch results.
 
-The library designed to manage API request rates, prevent 429 "Too Many Requests" errors, and ensure compliance with rate limits for services like [Geocoding APIs](https://www.geoapify.com/geocoding-api/). It helps:
+Use it when you have many API calls to make and need to avoid starting too many at once or too many within the same interval.
 
-* **Prevent 429 Errors**: The library helps you avoid hitting rate limits that result in "Too Many Requests" (HTTP 429) errors by throttling the number of API calls made within a specific time interval.
-
-* **Manage High Volumes of API Requests**: When handling large amounts of requests (e.g., Geocoding, weather, or payment APIs), the library ensures requests are executed in an orderly and rate-compliant manner.
-
-* **Queue and Batch Requests**: It efficiently queues and batches requests that exceed rate limits, processing them when allowed by the server’s rate limit, so your application can avoid disruptions or delays.
-
-* **Track Request Progress**: The library provides progress signaling and batch completion callbacks, allowing developers to monitor the status of API calls and handle results in manageable groups.
-
-## Importing the Library
-You can import the `@geoapify/request-rate-limiter` library into your project via Node.js or directly in the browser using a CDN.
-
-### In Node.js
-
-If you're using Node.js, install the library via npm:
+## Install
 
 ```bash
 npm install @geoapify/request-rate-limiter
 ```
 
-Then, import it in your code:
+## Quick Start
 
-#### ESM
-For projects using ECMAScript Modules (ESM), you can import the library using the import syntax:
+```javascript
+const { rateLimitedRequests } = require('@geoapify/request-rate-limiter');
+
+const urls = [
+    'https://api.example.com/1',
+    'https://api.example.com/2',
+    'https://api.example.com/3'
+];
+
+const requests = urls.map(url => () => fetch(url));
+
+const results = await rateLimitedRequests(requests, 5, 1000, {
+    maxConcurrentRequests: 2
+});
+
+for (const result of results) {
+    if (result instanceof Error) {
+        console.error('Request failed:', result.message);
+    } else {
+        console.log('Request succeeded:', result);
+    }
+}
+```
+
+Important: pass functions that start requests, not already-started promises. The limiter controls when each function is called.
+
+## Importing
+
+### ESM
+
 ```javascript
 import RequestRateLimiter from '@geoapify/request-rate-limiter';
+
+const results = await RequestRateLimiter.rateLimitedRequests(requests, 5, 1000);
 ```
 
-#### CommonJS
-If you are using the CommonJS module system (Node.js default), you can import the library like this:
+### CommonJS
+
 ```javascript
 const RequestRateLimiter = require('@geoapify/request-rate-limiter');
+
+const results = await RequestRateLimiter.rateLimitedRequests(requests, 5, 1000);
 ```
 
-## In HTML (Browser) using CDN
-You can also use the library in the browser by loading it via a CDN:
+You can also import the named function:
 
-Using unpkg:
+```javascript
+const { rateLimitedRequests } = require('@geoapify/request-rate-limiter');
+```
+
+### Browser
+
+You can load the UMD bundle from npm CDNs such as unpkg or jsDelivr:
+
 ```html
 <script src="https://unpkg.com/@geoapify/request-rate-limiter"></script>
 ```
 
-Using Cloudflare CDN:
 ```html
-<script src="https://cdnjs.cloudflare.com/ajax/libs/@geoapify/request-rate-limiter/latest/request-rate-limiter.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@geoapify/request-rate-limiter"></script>
 ```
 
-## Usage
-The library exposes a single core function: `RequestRateLimiter.rateLimitedRequests()`. This function allows you to control the rate at which a list of promise-based API requests is executed.
+The bundle exposes `RequestRateLimiter`.
+
+## API
+
+```typescript
+rateLimitedRequests<T>(
+    requests: Array<() => T | Promise<T>>,
+    maxRequests: number,
+    interval: number,
+    options?: Options<T>
+): Promise<Array<T | Error>>
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `requests` | `Array<() => T \| Promise<T>>` | Functions that start requests when called. |
+| `maxRequests` | `number` | Maximum number of requests in one interval group. |
+| `interval` | `number` | Delay in milliseconds before the next group can start. |
+| `options` | `Options<T>` | Optional progress, batching, and concurrency settings. |
+
+### Options
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `maxConcurrentRequests` | `number` | `maxRequests` | Maximum number of requests that may run at the same time. |
+| `batchSize` | `number` | none | Number of ordered results per `onBatchComplete` callback. The final batch may be smaller. |
+| `onProgress` | `(progress: ProgressData) => void` | none | Called after each completed request group. |
+| `onBatchComplete` | `(batch: BatchResult<T>) => void` | none | Called when all items in an ordered result batch are ready. |
+
+## Concurrency And Rate Behavior
+
+`maxRequests` and `maxConcurrentRequests` control different things:
+
+* `maxRequests` controls how many requests are allowed in one interval group.
+* `maxConcurrentRequests` controls how many requests from that group may run at the same time.
 
 ```javascript
-RequestRateLimiter.rateLimitedRequests(requests, maxRequests, interval, options);
+const results = await RequestRateLimiter.rateLimitedRequests(requests, 10, 1000, {
+    maxConcurrentRequests: 3
+});
 ```
 
-* **requests**: An array of functions that return promises (e.g., API requests) or another result.
-* **maxRequests**: The maximum number of requests that can be executed within the specified interval.
-* **interval**: The time interval (in milliseconds) within which the maxRequests are allowed.
-* **options**: An optional object to provide additional configurations:
-    * **batchSize** [optional]: Defines the size of batches for result retrieval. If set, results are returned in batches.
-    * **onProgress** [optional]: A callback function to signal progress. Receives an object with `completedRequests` and `totalRequests`.
-    * **onBatchComplete** [optional]: A callback function invoked when a batch is completed, providing batch results.
+This allows up to 10 requests per interval group, but never runs more than 3 requests at once. The next interval group starts only after the current group has completed and the interval delay has passed.
 
 ## Return Value
 
-The function returns a promise that resolves once all requests have been processed. 
+The function resolves to an array with the same order as `requests`.
 
-If the `batchSize` and `onBatchComplete` options are provided, additionally, batch results are returned as each batch is processed.
+```javascript
+const results = await RequestRateLimiter.rateLimitedRequests([
+    () => 'first',
+    () => 'second'
+], 2, 1000);
 
-## Code samples
-Here's an example of how to use the @geoapify/request-rate-limiter library to control API requests and see the results in batches:
+// results: ['first', 'second']
+```
 
-### Example 1: Basic Usage with Logging
-This example demonstrates a simple scenario where six functions are executed with rate limiting, batching, and progress logging.
+If an individual request throws or rejects, processing continues and the returned result array contains an `Error` object at that request's original index.
+
+## Error Handling
+
+Individual request failures do not stop the limiter. The failure is converted to an `Error` result, and later requests continue to run.
+
+```javascript
+const results = await RequestRateLimiter.rateLimitedRequests([
+    () => 'ok 1',
+    () => Promise.reject(new Error('failed')),
+    () => 'ok 2'
+], 1, 1000);
+
+// results: ['ok 1', Error('failed'), 'ok 2']
+for (const result of results) {
+    if (result instanceof Error) {
+        console.error('Request failed:', result.message);
+    } else {
+        console.log('Request succeeded:', result);
+    }
+}
+```
+
+The same `Error` entries are included in `onBatchComplete` results:
+
+```javascript
+await RequestRateLimiter.rateLimitedRequests(requests, 5, 1000, {
+    batchSize: 2,
+    onBatchComplete: (batch) => {
+        for (const result of batch.results) {
+            if (result instanceof Error) {
+                console.error('Batch item failed:', result.message);
+            }
+        }
+    }
+});
+```
+
+If `onProgress` or `onBatchComplete` throws, the `rateLimitedRequests()` promise rejects. This behavior applies only to callback errors, not individual request errors.
+
+## Callback Timing
+
+`onProgress` is called after a request group completes. Its counts reflect completed requests:
+
+```javascript
+{
+    totalRequests: 50,
+    completedRequests: 25
+}
+```
+
+`onBatchComplete` is called only after all items in that ordered result batch are ready. If the total number of requests is not divisible by `batchSize`, the final callback contains the remaining items.
+
+```javascript
+await RequestRateLimiter.rateLimitedRequests(requests, 5, 1000, {
+    batchSize: 2,
+    onBatchComplete: (batch) => {
+        console.log(batch.startIndex, batch.stopIndex, batch.results);
+    }
+});
+```
+
+## Behavior Notes
+
+* Result order always matches request order.
+* `requests` must be functions, not already-started promises.
+* Individual request errors do not stop processing.
+* Callback errors reject the returned promise.
+* `maxRequests`, `maxConcurrentRequests`, and `batchSize` must be positive integers.
+* `interval` must be a positive number.
+* Each `rateLimitedRequests()` call has isolated progress and batch state.
+
+## Examples
+
+### Basic Logging
 
 ```javascript
 const RequestRateLimiter = require('@geoapify/request-rate-limiter');
 
 const requests = [
-    () => { console.log("One"); return 1; },
-    () => { console.log("Two"); return 2; },
-    () => { console.log("Three"); return 3; },
-    () => { console.log("Four"); return 4; },
-    () => { console.log("Five"); return 5; },
-    () => { console.log("Six"); return 6; }
+    () => { console.log('One'); return 1; },
+    () => { console.log('Two'); return 2; },
+    () => { console.log('Three'); return 3; },
+    () => { console.log('Four'); return 4; },
+    () => { console.log('Five'); return 5; },
+    () => { console.log('Six'); return 6; }
 ];
 
 const options = {
-    batchSize: 2, // Process two requests at a time
-    onProgress: (progress) => console.log(`Progress: ${progress.completedRequests}/${progress.totalRequests} completed`),
-    onBatchComplete: (batch) => console.log('Batch completed:', batch)
+    maxConcurrentRequests: 1,
+    batchSize: 2,
+    onProgress: (progress) => {
+        console.log(`Progress: ${progress.completedRequests}/${progress.totalRequests} completed`);
+    },
+    onBatchComplete: (batch) => {
+        console.log('Batch completed:', batch);
+    }
 };
 
-RequestRateLimiter.rateLimitedRequests(requests, 1, 1000, options)
-  .then(results => console.log('All results:', results))
-  .catch(error => console.error('Error processing requests:', error));
+RequestRateLimiter.rateLimitedRequests(requests, 2, 1000, options)
+    .then(results => console.log('All results:', results))
+    .catch(error => console.error('Callback error:', error));
 ```
 
-In this example, six functions (acting as mock API requests) are processed using the `@geoapify/request-rate-limiter` library. The requests are rate-limited to **one request every second** and are **grouped into batches of two**, as specified by batchSize: 2. 
-
-Every time two requests are completed, the `onBatchComplete` callback is invoked, returning the results of those two processed requests. This setup allows for real-time tracking of progress and batch results, ensuring that requests are handled efficiently and within rate limits.
-
-### Example2: Geocoding Addresses and Saving Results in Batches
-
-This code sample demonstrates how to use the request-rate-limiter library to handle a large number of geocoding requests efficiently by reading a list of addresses from a file, sending them to the [Geoapify Geocoding API](https://www.geoapify.com/geocoding-api/), and saving the results in batches.
-
-* It reads a list of addresses from a file and sends them to the Geoapify Geocoding API using `@geoapify/request-rate-limiter`. 
-* It processes the requests in batches, with a maximum of 5 requests per second, and saves the results every 1000 requests into separate JSON files. 
-* [Optionally] Once all requests are completed, the full results are saved in a final JSON file.
-
+### Geocoding Addresses And Saving Results In Batches
 
 ```javascript
 import fs from 'fs';
 import fetch from 'node-fetch';
-import RequestRateLimiter  from '@geoapify/request-rate-limiter';
+import RequestRateLimiter from '@geoapify/request-rate-limiter';
 
-// Read addresses from a file
-const addresses = fs.readFileSync('addresses.txt', 'utf8').split('\n').filter(address => !!address);
+const addresses = fs.readFileSync('addresses.txt', 'utf8').split('\n').filter(Boolean);
 
 const GEOCODING_API_URL = 'https://api.geoapify.com/v1/geocode/search?limit=1&format=json';
 const API_KEY = 'YOUR_API_KEY';
 
-// Function to create geocoding requests
 const createGeocodingRequest = (address) => {
     return async () => {
-      const response = await fetch(`${GEOCODING_API_URL}&text=${encodeURIComponent(address)}&apiKey=${API_KEY}`);
-      if (!response.ok) {
-        return { address, error: `Failed to fetch for ${address}: ${response.statusText}`} 
-      }
-      const data = await response.json();
+        const response = await fetch(`${GEOCODING_API_URL}&text=${encodeURIComponent(address)}&apiKey=${API_KEY}`);
+        if (!response.ok) {
+            return { address, error: `Failed to fetch for ${address}: ${response.statusText}` };
+        }
 
-      if (data.results.length) {
-        // get the first resilt
-        return { address, result: data.results[0] };
-      } else {
-        return { address, error: `Address is not found` };
-      }
+        const data = await response.json();
+        if (data.results.length) {
+            return { address, result: data.results[0] };
+        }
+
+        return { address, error: 'Address is not found' };
     };
-  };
+};
 
-// Prepare an array of request functions for the rate limiter
-const requests = addresses.map((address) => createGeocodingRequest(address));
+const requests = addresses.map(address => createGeocodingRequest(address));
 
-// Batch saving function
 const saveBatchResults = (batch) => {
-  const filename = `geocode_results_batch_from_${batch.startIndex}_to_${batch.stopIndex}.json`;
-  fs.writeFileSync(filename, JSON.stringify(batch.results, null, 2));
-  console.log(`Batch from ${batch.startIndex} to ${batch.stopIndex} saved as ${filename}`);
+    const filename = `geocode_results_batch_from_${batch.startIndex}_to_${batch.stopIndex}.json`;
+    fs.writeFileSync(filename, JSON.stringify(batch.results, null, 2));
+    console.log(`Batch from ${batch.startIndex} to ${batch.stopIndex} saved as ${filename}`);
 };
 
-// Configure options for request-rate-limiter
-const options = {
-  batchSize: 1000, // Save results after every 1000 requests
-  onProgress: (progress) => {
-    console.log(`Progress: ${progress.completedRequests}/${progress.totalRequests} completed`);
-  },
-  onBatchComplete: (batch) => {
-    console.log(`Batch of ${batch.results.length} requests completed.`);
-    saveBatchResults(batch);
-  }
-};
-
-// Use the request-rate-limiter to send API requests with rate limiting
-RequestRateLimiter.rateLimitedRequests(requests, 5, 1000, options)
-  .then((allResults) => {
-    const filename = `geocode_results_all.json`;
-    fs.writeFileSync(filename, JSON.stringify(allResults, null, 2));
-    console.log('All requests completed.');
-  })
-  .catch(error => {
-    console.error('Error processing requests:', error);
-  });
+RequestRateLimiter.rateLimitedRequests(requests, 5, 1000, {
+    maxConcurrentRequests: 2,
+    batchSize: 1000,
+    onProgress: (progress) => {
+        console.log(`Progress: ${progress.completedRequests}/${progress.totalRequests} completed`);
+    },
+    onBatchComplete: (batch) => {
+        saveBatchResults(batch);
+    }
+})
+    .then((allResults) => {
+        fs.writeFileSync('geocode_results_all.json', JSON.stringify(allResults, null, 2));
+        console.log('All requests completed.');
+    })
+    .catch(error => {
+        console.error('Callback error:', error);
+    });
 ```
 
-With `@geoapify/request-rate-limiter`, you can efficiently handle high volumes of API requests while staying within rate limits. This ensures reliable performance, prevents overloading your API services, and provides useful features like progress tracking and batch processing for easier data management. Whether you're working with Geocoding APIs or other rate-limited services, this library offers a flexible and lightweight solution for smooth request handling.
+## Contributing
+
+Bug reports and pull requests are welcome on [GitHub](https://github.com/geoapify/request-rate-limiter).
+
+To run the project locally:
+
+```bash
+npm install
+npm test
+npm run build
+```
+
+## License
+
+Licensed under the [MIT License](LICENSE).

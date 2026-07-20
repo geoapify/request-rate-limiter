@@ -1,4 +1,4 @@
-import { RequestFunction, Options, BatchState, BatchResult, ProgressData } from './types';
+import { RequestFunction, Options, BatchState, BatchResult, ProgressData, RequestResult } from './types';
 
 /**
  * Execute a list of requests with rate limiting
@@ -26,41 +26,71 @@ async function rateLimitedRequests<T = any>(
     maxRequests: number,
     interval: number,
     options?: Options<T>
-): Promise<T[]> {
-    validateArguments(maxRequests, interval, requests);
+): Promise<RequestResult<T>[]> {
+    validateArguments(maxRequests, interval, requests, options);
+    const maxConcurrentRequests = options?.maxConcurrentRequests ?? maxRequests;
     
     const batchState: BatchState<T> = {
         batchItemsToFire: new Array(requests.length),
+        batchItemsReady: new Array(requests.length).fill(false),
         totalRequests: requests.length,
         completedRequests: 0
     };
     
-    const result = new Array<T>(requests.length);
-    const promises: Promise<T>[] = [];
+    const result = new Array<RequestResult<T>>(requests.length);
 
     for (let startIndex = 0; startIndex < requests.length; startIndex += maxRequests) {
         const endIndex = Math.min(startIndex + maxRequests, requests.length);
-        const batch = requests.slice(startIndex, endIndex).map((execute, index) =>
-            Promise.resolve(execute()).then(res => {
-                result[startIndex + index] = res;
-                return res;
-            })
-        );
+        const batch = await executeBatch(requests, result, startIndex, endIndex, maxConcurrentRequests);
         onBatchFinish(batchState, batch, options, startIndex, endIndex);
-        promises.push(...batch);
 
         if (endIndex < requests.length) {
             await new Promise(resolve => setTimeout(resolve, interval));
         }
     }
 
-    await Promise.all(promises);
     return result;
+}
+
+async function executeBatch<T>(
+    requests: RequestFunction<T>[],
+    result: RequestResult<T>[],
+    startIndex: number,
+    endIndex: number,
+    maxConcurrentRequests: number
+): Promise<RequestResult<T>[]> {
+    const batchSize = endIndex - startIndex;
+    const batchResult = new Array<RequestResult<T>>(batchSize);
+    let nextIndex = 0;
+
+    async function runNext(): Promise<void> {
+        const index = nextIndex++;
+        if (index >= batchSize) {
+            return;
+        }
+
+        const resultIndex = startIndex + index;
+        try {
+            const res = await requests[resultIndex]();
+            result[resultIndex] = res;
+            batchResult[index] = res;
+        } catch (error) {
+            const res = toError(error);
+            result[resultIndex] = res;
+            batchResult[index] = res;
+        }
+
+        await runNext();
+    }
+
+    const workers = Math.min(maxConcurrentRequests, batchSize);
+    await Promise.all(Array.from({ length: workers }, runNext));
+    return batchResult;
 }
 
 function onBatchCompleteFired<T>(
     batchState: BatchState<T>,
-    batchItems: T[],
+    batchItems: RequestResult<T>[],
     startIndex: number,
     endIndex: number,
     batchSize: number,
@@ -68,21 +98,21 @@ function onBatchCompleteFired<T>(
 ): void {
     for (let i = startIndex; i < endIndex; i++) {
         batchState.batchItemsToFire[i] = batchItems[i - startIndex];
+        batchState.batchItemsReady[i] = true;
     }
 
     for (let i = 0; i < batchState.batchItemsToFire.length; i = i + batchSize) {
         let batchEndIndex = Math.min(i + batchSize, batchState.batchItemsToFire.length);
         let allItemsArePopulated = ifAllItemsArePopulated(batchState, i, batchEndIndex);
-        // Only fire batch if we have a complete batch (or this is the last batch with all items populated)
-        if (allItemsArePopulated && batchEndIndex - i === batchSize) {
-            const batch = batchState.batchItemsToFire.slice(i, batchEndIndex) as T[];
+        if (allItemsArePopulated) {
+            const batch = batchState.batchItemsToFire.slice(i, batchEndIndex);
             const result: BatchResult<T> = {
                 startIndex: i,
                 stopIndex: batchEndIndex - 1,
                 results: batch
             };
-            for (let j = 0; j < batchEndIndex; j++) {
-                batchState.batchItemsToFire[j] = undefined;
+            for (let j = i; j < batchEndIndex; j++) {
+                batchState.batchItemsReady[j] = false;
             }
             onBatchComplete(result);
         }
@@ -95,7 +125,7 @@ function ifAllItemsArePopulated<T>(
     endIndex: number
 ): boolean {
     for (let i = startIndex; i < endIndex; i++) {
-        if (i < batchState.batchItemsToFire.length && batchState.batchItemsToFire[i] === undefined) {
+        if (i < batchState.batchItemsReady.length && !batchState.batchItemsReady[i]) {
             return false;
         }
     }
@@ -118,29 +148,40 @@ function onProgressFired<T>(
 
 function onBatchFinish<T>(
     batchState: BatchState<T>,
-    batch: Promise<T>[],
+    batchItems: RequestResult<T>[],
     options: Options<T> | undefined,
     startIndex: number,
     endIndex: number
 ): void {
-    Promise.all(batch).then(batchItems => {
-        if (options && options.batchSize && options.onBatchComplete) {
-            onBatchCompleteFired(batchState, batchItems, startIndex, endIndex, options.batchSize, options.onBatchComplete);
-        }
-        if (options && options.onProgress) {
-            onProgressFired(batchState, startIndex, endIndex, options.onProgress);
-        }
-    });
+    if (options?.batchSize && options.onBatchComplete) {
+        onBatchCompleteFired(batchState, batchItems, startIndex, endIndex, options.batchSize, options.onBatchComplete);
+    }
+    if (options?.onProgress) {
+        onProgressFired(batchState, startIndex, endIndex, options.onProgress);
+    }
 }
 
 function validateArguments<T>(
     maxRequests: number,
     interval: number,
-    requests: RequestFunction<T>[]
+    requests: RequestFunction<T>[],
+    options?: Options<T>
 ): void {
-    if (maxRequests < 1) throw new Error('"maxRequests" must be at least 1');
-    if (interval <= 0) throw new Error('"interval" must be positive number');
-    if (!requests || requests.length === 0) throw new Error('"requests" must be an array of functions to execute');
+    if (!Number.isInteger(maxRequests) || maxRequests < 1) throw new Error('"maxRequests" must be a positive integer');
+    if (!Number.isFinite(interval) || interval <= 0) throw new Error('"interval" must be positive number');
+    if (!Array.isArray(requests) || requests.length === 0 || requests.some(request => typeof request !== 'function')) {
+        throw new Error('"requests" must be an array of functions to execute');
+    }
+    if (options?.batchSize !== undefined && (!Number.isInteger(options.batchSize) || options.batchSize < 1)) {
+        throw new Error('"batchSize" must be a positive integer');
+    }
+    if (options?.maxConcurrentRequests !== undefined && (!Number.isInteger(options.maxConcurrentRequests) || options.maxConcurrentRequests < 1)) {
+        throw new Error('"maxConcurrentRequests" must be a positive integer');
+    }
+}
+
+function toError(error: unknown): Error {
+    return error instanceof Error ? error : new Error(String(error));
 }
 
 // Export for CommonJS compatibility
@@ -151,4 +192,3 @@ export * from './types';
 
 // Default export for backward compatibility
 export default { rateLimitedRequests };
-
